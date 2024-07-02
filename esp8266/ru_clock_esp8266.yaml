@@ -1,0 +1,273 @@
+# 8.1cm width
+# 6.22cm inner width
+
+substitutions:
+  name: ru-clock
+  friendly_name: RU Clock Manipulator
+
+  pin_btn: "GPIO13"
+  pin_ir_emulator: "GPIO12"
+  pin_remote_transmitter: "GPIO14"
+  
+  key_up: !secret key_up
+  key_down: !secret key_down
+  key_left: !secret key_left
+  key_right: !secret key_right
+  key_mode: !secret key_mode
+  key_power: !secret key_power
+  hack_esp_scheduler: "0xab"
+
+  #                  ss mm hh d M w              
+  cron_set_time:    '00 01 05 * * *'
+  cron_finish_time: '00 05 05 * * *'
+
+  target_time_hour: "5"
+  target_time_min: "5"
+  target_time_sec: "2"
+
+  ir_cmd_wait: "1000ms"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  name_add_mac_suffix: true
+  project:
+    name: ru-ha-group.ru-clock
+    version: "0.5"
+
+esp8266:
+  board: nodemcuv2
+  framework:
+    version: recommended
+
+wifi:
+  # ap:
+  # ssid: !secret wifi_ssid
+  # password: !secret wifi_password
+  networks:
+  - ssid: !secret wifi_eap_ssid
+    eap:
+      username: !secret wifi_eap_username
+      password: !secret wifi_eap_password
+      #ttls_phase_2: mschapv2
+
+web_server:
+  port: 80
+  local: true
+
+api:
+logger:
+# improv_serial:
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Sofia
+    servers:
+     - 0.pool.ntp.org
+     - 1.pool.ntp.org
+     - 2.pool.ntp.org
+    
+    on_time:
+      - cron: ${cron_set_time}
+        then:
+          - script.execute: ir_set_time
+      - cron: ${cron_finish_time}
+        then:
+          - script.execute: ir_finish
+
+remote_receiver:
+  pin: 
+    number: GPIO04
+    mode: INPUT_PULLUP
+  dump: all
+
+remote_transmitter:
+  pin: 
+    number: ${pin_remote_transmitter}
+    inverted: false
+    mode: OUTPUT
+  carrier_duty_percent: 100%
+
+output:
+  - platform: gpio
+    pin: 
+      number: ${pin_ir_emulator}
+      inverted: true
+      mode: OUTPUT
+    id: ir_emulator
+
+script:
+  - id: ir_key
+    mode: queued
+    parameters:
+      cmd: int
+      repeat: int
+    then:
+      - lambda: |-
+          int currRepeat = repeat;
+          
+          while(currRepeat > 4){
+            currRepeat -= 4;
+            id(_ir_key)->execute(cmd, 4);
+          }
+          id(_ir_key)->execute(cmd, currRepeat);
+
+  - id: _ir_key
+    mode: queued
+    parameters:
+      cmd: int
+      repeat: int
+    then:
+      - lambda: |-
+          std::string irBtn;
+          switch (cmd){
+            case 0x20:
+              irBtn = "Up";
+              break;
+            case 0x21:
+              irBtn = "Down";
+              break;
+            case 0x11:
+              irBtn = "Left";
+              break;
+            case 0x10:
+              irBtn = "Right";
+              break;
+            case 0x3b:
+              irBtn = "Mode";
+              break;
+            case 0x0c:
+              irBtn = "Power";
+              break;
+            case 0xab:
+              irBtn = "END Set time";
+              id(ir_emulator).turn_off();
+              break;
+          }
+          ESP_LOGD("main", "IR Key %s PRESSED, %d times", irBtn.c_str(), repeat);
+      - remote_transmitter.transmit_rc5:
+          address: 0x08
+          command: !lambda return cmd;
+          repeat:
+            times: !lambda return repeat;
+            wait_time: ${ir_cmd_wait}
+      - delay: ${ir_cmd_wait}
+
+  - id: ir_go_hour
+    then:
+      - logger.log: IR INIT and go to HOUR
+      
+      # Go to default view
+      - script.execute:
+          id: ir_key
+          cmd: ${key_power}
+          repeat: 2
+
+      # Go to time setting view
+      - script.execute:
+          id: ir_key
+          cmd: ${key_mode}
+          repeat: 2
+
+      # Go to hour view
+      - script.execute:
+          id: ir_key
+          cmd: ${key_right}
+          repeat: 4
+
+  - id: ir_go_min_sec
+    then:
+      - logger.log: IR go to MINUTE/SECOND
+      
+      # Go to minute view
+      - script.execute:
+          id: ir_key
+          cmd: ${key_right}
+          repeat: 2
+
+  - id: ir_go_exit
+    then:
+      - logger.log: IR go to EXIT
+      
+      # Go to default view
+      - script.execute:
+          id: ir_key
+          cmd: ${key_power}
+          repeat: 2
+
+  - id: ir_set_hour
+    parameters:
+      hour: int
+    then:
+      - logger.log: IR SET HOUR
+      
+      # Go to min hour
+      - script.execute:
+          id: ir_key
+          cmd: ${key_down}
+          repeat: 24
+
+      # Go to target hour
+      - script.execute:
+          id: ir_key
+          cmd: ${key_up}
+          repeat: !lambda return hour+1;
+  
+  - id: ir_set_min_sec
+    parameters:
+      target: int
+    then:
+      - logger.log: IR SET MINUTE/SECOND
+      
+      # Go to min minute/second
+      - script.execute:
+          id: ir_key
+          cmd: ${key_down}
+          repeat: 60
+
+      # Go to target
+      - script.execute:
+          id: ir_key
+          cmd: ${key_up}
+          repeat: !lambda return target+1;
+
+  - id: ir_set_time
+    then:
+      - logger.log: Set Time STARTED
+      - output.turn_on: ir_emulator
+      
+      - script.execute: ir_go_hour
+      - script.execute:
+          id: ir_set_hour
+          hour: ${target_time_hour}
+      - script.execute: ir_go_min_sec
+      - script.execute:
+          id: ir_set_min_sec
+          target: ${target_time_min}
+      - script.execute: ir_go_min_sec
+      - script.execute:
+          id: ir_set_min_sec
+          target: ${target_time_sec}
+
+  - id: ir_finish
+    then:
+      - script.execute: ir_go_exit
+
+      - script.execute:
+          id: ir_key
+          cmd: ${hack_esp_scheduler}
+          repeat: 1
+      # - output.turn_off: ir_emulator
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: ${pin_btn}
+      mode:
+        input: true
+        pullup: true
+    name: Send IR code
+    on_press:
+      then:
+        - script.execute: ir_set_time
