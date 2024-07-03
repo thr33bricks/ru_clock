@@ -4,10 +4,10 @@
 substitutions:
   name: ru-clock
   friendly_name: RU Clock Manipulator
-
-  pin_btn: "GPIO13"
-  pin_ir_emulator: "GPIO12"
-  pin_remote_transmitter: "GPIO14"
+  
+  pin_btn: "GPIO16"
+  pin_ir_emulator: "GPIO27"
+  pin_remote_transmitter: "GPIO05" #17
   
   key_up: !secret key_up
   key_down: !secret key_down
@@ -15,7 +15,6 @@ substitutions:
   key_right: !secret key_right
   key_mode: !secret key_mode
   key_power: !secret key_power
-  hack_esp_scheduler: "0xab"
 
   #                  ss mm hh d M w              
   cron_set_time:    '00 01 05 * * *'
@@ -35,10 +34,10 @@ esphome:
     name: ru-ha-group.ru-clock
     version: "0.5"
 
-esp8266:
-  board: nodemcuv2
+esp32:
+  board: esp32doit-devkit-v1
   framework:
-    version: recommended
+    type: esp-idf
 
 wifi:
   ap:
@@ -49,7 +48,7 @@ wifi:
   #   eap:
   #     username: !secret wifi_eap_username
   #     password: !secret wifi_eap_password
-  #     #ttls_phase_2: mschapv2
+      #ttls_phase_2: mschapv2
 
 web_server:
   port: 80
@@ -139,10 +138,6 @@ script:
               break;
             case 0x0c:
               irBtn = "Power";
-              break;
-            case 0xab:
-              irBtn = "END Set time";
-              id(ir_emulator).turn_off();
               break;
           }
           ESP_LOGD("main", "IR Key %s PRESSED, %d times", irBtn.c_str(), repeat);
@@ -234,7 +229,7 @@ script:
 
   - id: ir_set_time
     then:
-      - logger.log: Set Time STARTED
+      - logger.log: Set Time Test STARTED
       - output.turn_on: ir_emulator
       
       - script.execute: ir_go_hour
@@ -253,12 +248,7 @@ script:
   - id: ir_finish
     then:
       - script.execute: ir_go_exit
-
-      - script.execute:
-          id: ir_key
-          cmd: ${hack_esp_scheduler}
-          repeat: 1
-      # - output.turn_off: ir_emulator
+      - output.turn_off: ir_emulator
 
 binary_sensor:
   - platform: gpio
