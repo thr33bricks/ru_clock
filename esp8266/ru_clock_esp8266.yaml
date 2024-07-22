@@ -78,7 +78,9 @@ time:
     on_time:
       - cron: ${cron_set_time}
         then:
-          - script.execute: ir_set_time
+          # Set time and mock gpio press so an event shows up in home assistant
+          - lambda: |-
+              id(gpio_set_time).publish_state(false);
       - cron: ${cron_finish_time}
         then:
           - script.execute: ir_finish
@@ -280,6 +282,7 @@ binary_sensor:
         input: true
         pullup: true
     name: Send IR code
+    id: gpio_set_time
     on_press:
       then:
         - script.execute: ir_set_time
