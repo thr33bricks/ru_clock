@@ -2,8 +2,9 @@
 # 6.22cm inner width
 
 substitutions:
-  name: ru-clock
-  friendly_name: RU Clock Manipulator
+  number: "1"
+  name: ru-clock-${number}
+  friendly_name: RU Clock Manipulator ${number} |
 
   pin_btn: "GPIO13"
   pin_ir_emulator: "GPIO12"
@@ -55,7 +56,12 @@ web_server:
   port: 80
   local: true
 
-api:
+mqtt:
+  broker: !secret mqtt_broker_ip
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+
+# api:
 logger:
 # improv_serial:
 
@@ -75,6 +81,11 @@ time:
       - cron: ${cron_finish_time}
         then:
           - script.execute: ir_finish
+
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal dB"
+    update_interval: 1s
 
 # remote_receiver:
 #   pin: 
