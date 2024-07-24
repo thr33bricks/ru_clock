@@ -61,6 +61,8 @@ mqtt:
   username: !secret mqtt_user
   password: !secret mqtt_password
   discovery_unique_id_generator: mac
+  port: 8883
+  reboot_timeout: 0s
 
 # api:
 logger:
